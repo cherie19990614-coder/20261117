@@ -1,4 +1,5 @@
-// 宣告變數以儲存待機與走路兩張圖片精靈圖。
+// 宣告變數以儲存背景與圖片精靈圖。
+let bgImg; // 記錄背景圖片。
 let stopSheet; // 記錄角色待機精靈圖。
 let walkSheet; // 記錄角色走路精靈圖。
 let magicSheet; // 記錄角色施展魔法的精靈圖。
@@ -23,6 +24,7 @@ const frameWidth = sheetWidth / totalFrames; // 將精靈圖平均分為八格�
 // 記錄目前動畫影格、角色位置和行走狀態。
 let currentFrame = 0; // 動畫從第一張影格開始播放。
 let characterX; // 儲存角色目前的水平中心位置。
+let bgX; // 記錄背景的水平位移量。
 let moveDirection = 0; // 0 表示停止移動，1 表示右移，-1 表示左移。
 let facingDirection = 1; // 1 表示面向右方，-1 表示面向左方。
 let isWalking = false; // 記錄角色是否已切換為走路動畫。
@@ -39,8 +41,9 @@ let effectFrame = 0; // 記錄目前播放的飛行光效影格。
 // 設定影格切換和角色移動速度。
 const animSpeed = 8; // 每隔八個繪圖循環切換一次影格。
 
-// 在建立畫布前載入待機、走路與魔法精靈圖。
+// 在建立畫布前載入背景與精靈圖。
 function preload() { 
+  bgImg = loadImage('bg/01.png'); // 載入背景圖片。
   stopSheet = loadImage('1/stop/1stop.png'); // 載入角色待機精靈圖。
   walkSheet = loadImage('1/walk/1walk.png'); // 載入角色走路精靈圖。
   magicSheet = loadImage('1/magic/1magic.png'); // 載入角色魔法精靈圖。
@@ -50,7 +53,14 @@ function preload() {
 function setup() { 
   createCanvas(windowWidth, windowHeight); // 建立填滿瀏覽器視窗的畫布。
   imageMode(CENTER); // 以影格中心點作為圖片繪製座標。
-  characterX = width * (2 / 3); // 將角色初始位置設在畫布寬度的三分之二處。
+  
+  characterX = width / 2; // 將角色初始位置設定在畫布正中央。
+  
+  // 計算背景圖片尺寸並將背景初始位置設在第二張（中間）背景
+  let bgDisplayHeight = height;
+  let bgDisplayWidth = Math.ceil(bgDisplayHeight * (bgImg.width / bgImg.height));
+  bgX = -bgDisplayWidth; // 讓背景從第二張開始顯示
+
   for (let i = 0; i < totalFrames; i++) { 
     const sourceX = i * frameWidth; // 計算目前影格在精靈圖中的水平位置。
     stopFrames.push(stopSheet.get(sourceX, 0, frameWidth, stopSheetHeight)); // 裁切並儲存一張待機影格。
@@ -155,30 +165,57 @@ function startMagicEffect() {
   effectActive = true; 
 }
 
-// 持續繪製天空背景與目前動畫影格。
+// 持續繪製背景與目前動畫影格。
 function draw() { 
-  background(135, 206, 235); // 使用天空藍色 RGB 值繪製背景。
-  
-  // 將角色高度設定為畫布總高度的 1/3，並根據圖片原始比例計算對應寬度
+  background(135, 206, 235); // 預防背景圖片載入前的預設底色。
+
+  // 計算符合畫布高度的背景寬高比例
+  let bgDisplayHeight = height;
+  let bgDisplayWidth = Math.ceil(bgDisplayHeight * (bgImg.width / bgImg.height));
+  let totalBgWidth = bgDisplayWidth * 3; // 三張背景圖串接的總寬度
+
+  // 角色寬高設定
   const displayHeight = height / 3; 
   const frameHeight = isWalking ? walkSheetHeight : stopSheetHeight; 
   const characterDisplayHeight = isCastingMagic ? displayHeight * (magicSheetHeight / stopSheetHeight) : displayHeight; 
   const displayWidth = isCastingMagic ? displayHeight * (magicFrameWidth / stopSheetHeight) : displayHeight * (frameWidth / frameHeight); 
-  
-  const halfWidth = displayWidth / 2; 
-  characterX = constrain(characterX, halfWidth, width - halfWidth); 
-  
-  if (!isCastingMagic && moveDirection > 0) { 
-    const rightEdge = width - halfWidth; 
-    characterX = min(characterX + min(width, height) * 0.008, rightEdge); 
-    if (characterX >= rightEdge) moveDirection = 0; 
-  } 
-  if (!isCastingMagic && moveDirection < 0) { 
-    const leftEdge = halfWidth; 
-    characterX = max(characterX - min(width, height) * 0.008, leftEdge); 
-    if (characterX <= leftEdge) moveDirection = 0; 
-  } 
-  
+  const halfWidth = displayWidth / 2;
+
+  // 處理背景捲動與角色移動邏輯
+  let moveSpeed = min(width, height) * 0.008;
+  if (!isCastingMagic && moveDirection !== 0) {
+    if (moveDirection > 0) { // 往右移動
+      let minBgX = -(totalBgWidth - width);
+      if (bgX > minBgX) {
+        bgX -= moveSpeed * 1.5;
+        if (bgX < minBgX) bgX = minBgX;
+      } else {
+        let rightEdge = width - halfWidth;
+        characterX = min(characterX + moveSpeed, rightEdge);
+      }
+    } else if (moveDirection < 0) { // 往左移動
+      if (bgX < 0) {
+        bgX += moveSpeed * 1.5;
+        if (bgX > 0) bgX = 0;
+      } else {
+        let leftEdge = halfWidth;
+        characterX = max(characterX - moveSpeed, leftEdge);
+      }
+    }
+  }
+
+  // 繪製三張無縫連續的背景圖片（使用整數座標與 +1 像素寬度完美覆蓋縫隙）
+  imageMode(CORNER);
+  let renderWidth = bgDisplayWidth + 1; 
+  let x1 = Math.round(bgX);
+  let x2 = Math.round(bgX + bgDisplayWidth);
+  let x3 = Math.round(bgX + bgDisplayWidth * 2);
+
+  image(bgImg, x1, 0, renderWidth, bgDisplayHeight);
+  image(bgImg, x2, 0, renderWidth, bgDisplayHeight);
+  image(bgImg, x3, 0, renderWidth, bgDisplayHeight);
+  imageMode(CENTER); // 恢復圖片繪製模式以供角色與特效使用
+
   const effectImage = magicEffectFrames[effectFrame]; 
   const effectWidth = displayHeight * (magicFrameWidth / stopSheetHeight); 
   const effectHeight = displayHeight * (magicSheetHeight / stopSheetHeight); 
